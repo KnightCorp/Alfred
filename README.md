@@ -1,5 +1,89 @@
-# Alfred
-## License
+# 🧠 Alfred
 
-This project is proprietary and closed source. All rights reserved.  
-Unauthorized use or distribution is strictly prohibited.
+Alfred is a modular command-line reasoning assistant powered by LLMs. It supports OpenAI, Anthropic, and Ollama (e.g., DeepSeek), offering a local-friendly environment with colorized output and API key protection.
+
+---
+
+## 🚀 Features
+
+- ✅ Toggle between **OpenAI**, **Anthropic Claude**, and **Ollama DeepSeek**
+- 🧪 Interactive command-line interface
+- ⏱️ Displays model response timing
+- 🌈 Colored terminal messages via `colorama`
+- 🔐 Environment variable management using `.env` (auto-ignored)
+
+---
+
+## 🛠️ Getting Started
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/your-username/Alfred.git
+cd Alfred
+```
+
+### 2. Set Up the Environment
+
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+### 3. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Add API Keys
+
+```bash
+cd src
+touch .env
+```
+
+```env
+OPENAI_API_KEY=your_openai_api_key
+ANTHROPIC_API_KEY=your_anthropic_api_key
+```
+
+> ✅ `.env` is excluded from version control via `.gitignore`.
+
+### 5. Run the Application
+
+```bash
+python core.py
+```
+
+---
+
+## 📁 Project Structure
+
+```
+ALFRED/
+├── src/
+│   └── core/              # Source code (LLM logic, CLI handler)
+│   └── .env               # API keys (ignored via .gitignore)
+├── .gitignore             # Ignores sensitive files like .env
+├── LICENSE                # Licensing information
+├── README.md              # Project documentation
+├── requirements.txt       # Python dependencies
+```
+
+---
+
+## 🤖 Supported Models
+
+| Model         | Backend     | Notes                          |
+|---------------|-------------|---------------------------------|
+| GPT-3.5/4     | OpenAI      | Needs `OPENAI_API_KEY`         |
+| Claude 3.5    | Anthropic   | Needs `ANTHROPIC_API_KEY`      |
+| DeepSeek      | Ollama LLM  | Runs locally via Ollama setup  |
+
+---
+
+## 📄 License
+
+This project is **proprietary and closed source**.  
+All rights reserved. Unauthorized use or distribution is strictly prohibited.
