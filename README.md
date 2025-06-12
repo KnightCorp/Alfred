@@ -19,7 +19,7 @@ Alfred is a modular command-line reasoning assistant powered by LLMs. It support
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/Alfred.git
+git clone https://github.com/KnightCorp/Alfred.git
 cd Alfred
 ```
 
