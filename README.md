@@ -50,7 +50,40 @@ ANTHROPIC_API_KEY=your_anthropic_api_key
 
 > ✅ `.env` is excluded from version control via `.gitignore`.
 
-### 5. Run the Application
+### 5. Install Ollama (for local LLMs like DeepSeek)
+
+Ollama lets you run models like `deepseek-llm` or `llama3` locally on your machine.
+
+#### Mac
+
+```bash
+brew install ollama
+ollama run deepseek-llm
+```
+
+#### Linux
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama run deepseek-llm
+```
+
+#### Windows
+
+Download the Windows installer from:  
+👉 https://ollama.com/download
+
+Then run:
+
+```bash
+ollama run deepseek-llm
+```
+
+> 🧠 You can replace `deepseek-llm` with any other supported model like `llama3`, `mistral`, etc.
+
+---
+
+### 6. Run the Application
 
 ```bash
 python core.py
@@ -72,6 +105,7 @@ ALFRED/
 ```
 
 ---
+
 
 ## 🤖 Supported Models
 
