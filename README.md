@@ -29,7 +29,7 @@ Command to clone it:
 bash
 Copy
 Edit
-git clone https://github.com/OpenDeepResearch/open_deep_research.git
+git clone https://github.com/langchain-ai/open_deep_research.git
 ⚠️ Ensure both Alfred and open_deep_research are in the same parent directory, so the internal imports and relative paths work properly.
 
 ## 🛠️ Getting Started
