@@ -26,8 +26,9 @@ Edit
 main/
 ├── Alfred/
 ├── open_deep_research/
-Command to clone it:
+
 ```
+Command to clone it:
 
 bash
 Copy
