@@ -13,6 +13,24 @@ Alfred is a modular command-line reasoning assistant powered by LLMs. It support
 - 🔐 Environment variable management using `.env` (auto-ignored)
 
 ---
+🧠 Prerequisite: Download open_deep_research
+This project depends on an external module named open_deep_research for advanced document understanding and deep semantic research.
+
+📥 How to set it up
+Please clone or download the repository next to the Alfred folder like this:
+
+Copy
+Edit
+INTERNSHIPS/
+├── Alfred/
+├── open_deep_research/
+Command to clone it:
+
+bash
+Copy
+Edit
+git clone https://github.com/OpenDeepResearch/open_deep_research.git
+⚠️ Ensure both Alfred and open_deep_research are in the same parent directory, so the internal imports and relative paths work properly.
 
 ## 🛠️ Getting Started
 
