@@ -21,10 +21,13 @@ Please clone or download the repository next to the Alfred folder like this:
 
 Copy
 Edit
-INTERNSHIPS/
+
+```
+main/
 ├── Alfred/
 ├── open_deep_research/
 Command to clone it:
+```
 
 bash
 Copy
