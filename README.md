@@ -108,7 +108,7 @@ ollama run deepseek-llm
 ### 6. Run the Application
 
 ```bash
-python core.py
+python core/base_reasoning.py
 ```
 
 ---
