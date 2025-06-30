@@ -1,11 +1,13 @@
 import os
-import getpass
 import time
+import os
+os.environ["CHROMA_TELEMETRY_ENABLED"] = "False"
+import chromadb
+
 import asyncio
-from dotenv import load_dotenv
 from typing import TypedDict, Annotated, Sequence
 from functools import lru_cache
-from tools import tools, should_use_deep_research
+from dotenv import load_dotenv
 
 from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_openai import ChatOpenAI
@@ -19,12 +21,9 @@ except ImportError:
     GEMINI_AVAILABLE = False
 
 from langchain_ollama import OllamaLLM
-from langgraph.prebuilt import create_react_agent
 from colorama import Fore, init
 
-# Fix for nested event loops (Jupyter, etc.)
-import nest_asyncio
-nest_asyncio.apply()
+from chromadb_utils import create_inmemory_collection, add_file_to_collection, query_collection
 
 init(autoreset=True)
 load_dotenv()
@@ -34,11 +33,11 @@ class AgentState(TypedDict):
 
 def select_model():
     print(Fore.YELLOW + "Select a model:")
-    print("1. OpenAI GPT-4.1 (Token Limit: 30,000 tokens/min)")
-    print("2. Anthropic Claude (Token Limit: see Anthropic docs)")
+    print("1. OpenAI GPT-3.5/4")
+    print("2. Anthropic Claude")
     if GEMINI_AVAILABLE:
-        print("3. Google Gemini (Token Limit: see Google docs)")
-    print("4. DeepSeek (Token Limit: see DeepSeek docs)")
+        print("3. Google Gemini")
+    print("4. DeepSeek")
     print("5. Ollama (local)")
     choice = input("Enter choice (1/2/3/4/5): ").strip()
     if choice == "1":
@@ -87,97 +86,83 @@ def get_llm(model_name: str = "openai"):
     else:
         raise ValueError(f"Unsupported or unavailable model: {model_name}")
 
-def create_agent(model_name):
-    llm = get_llm(model_name)
-    if model_name in {"openai", "anthropic", "gemini", "deepseek"}:
-        print(Fore.CYAN + f"[DEBUG] Creating ReAct agent for {model_name} with tools: {[t.name for t in tools]}")
-        agent = create_react_agent(llm, tools)
-        return agent
-    elif model_name == "ollama":
-        def ollama_chat_loop():
-            print(Fore.YELLOW + "\n[Ollama Chat] Type your prompt (type 'Q' to quit):\n")
-            while True:
-                try:
-                    text = input(Fore.CYAN + "Ask anything... ").strip()
-                    if text.lower() == 'q':
-                        print(Fore.GREEN + "Exiting...")
-                        break
-                    if not text:
-                        print(Fore.RED + "Please enter a valid input.")
-                        continue
-                    print(Fore.BLUE + "Sending prompt...")
-                    start_time = time.time()
-                    response = llm.invoke([HumanMessage(content=text)])
-                    elapsed = time.time() - start_time
-                    print(Fore.MAGENTA + f"\nResponse received in {elapsed:.2f} seconds:\n")
-                    print(Fore.WHITE + getattr(response, "content", str(response)))
-                except KeyboardInterrupt:
-                    print(Fore.RED + "\nKeyboard interrupt received. Exiting...")
-                    break
-                except Exception as e:
-                    print(Fore.RED + f"An error occurred: {e}")
-        return ollama_chat_loop
-    else:
-        raise ValueError(f"Unsupported model: {model_name}")
+def main_menu():
+    print(Fore.CYAN + "\nWhat would you like to do?")
+    print("1. Ask anything (chat mode)")
+    print("2. Upload file(s) & ask about them")
+    print("Q. Quit")
+    choice = input("Enter choice (1/2/Q): ").strip().lower()
+    return choice
 
-async def run_prompt_loop(agent, model_name="LLM"):
-    print(Fore.YELLOW + f"\n[{model_name}] Type your prompt (type 'Q' to quit):\n")
+def ask_anything(llm):
+    print(Fore.YELLOW + "\n[Chat Mode] Type your prompt (type 'Q' to quit):\n")
     while True:
-        try:
-            text = input(Fore.CYAN + "Ask anything... ").strip()
-            if text.lower() == 'q':
-                print(Fore.GREEN + "Exiting...")
-                break
-
-        
-
-            print(Fore.BLUE + "Sending prompt...")
-            start_time = time.time()
-            initial_state = {"messages": [HumanMessage(content=text)]}
-            print(Fore.LIGHTBLACK_EX + f"[DEBUG] Initial state: {initial_state}")
-            try:
-                result = await agent.ainvoke(initial_state)
-            except Exception as e:
-                err_str = str(e)
-                if "rate_limit_exceeded" in err_str or "429" in err_str or "Request too large" in err_str:
-                    print(Fore.RED + f"\n[ERROR] Rate limit or token limit exceeded for this model.")
-                    if "gpt-4.1" in err_str or "openai" in model_name.lower():
-                        print(Fore.YELLOW + "OpenAI GPT-4.1 has a 30,000 tokens/minute limit. Try a shorter or simpler query, or wait and try again.")
-                    else:
-                        print(Fore.YELLOW + f"Model '{model_name}' may have hit its token or rate limit. Please check provider docs.")
-                    print(Fore.LIGHTBLACK_EX + f"Raw error: {e}")
-                    continue
-                else:
-                    print(Fore.RED + f"An error occurred: {e}")
-                    break
-            elapsed = time.time() - start_time
-
-            last_message = result["messages"][-1]
-            tool_used = False
-            if hasattr(last_message, "tool_calls"):
-                tool_used = bool(getattr(last_message, "tool_calls", []))
-            """
-            print(Fore.LIGHTBLACK_EX + f"[DEBUG] Tool used: {tool_used}")
-            print(Fore.LIGHTBLACK_EX + f"[DEBUG] Final state: {result}")
-            """
-            
-            print(Fore.MAGENTA + f"\nResponse received in {elapsed:.2f} seconds:\n")
-            print(Fore.WHITE + getattr(last_message, "content", str(last_message)))
-        except KeyboardInterrupt:
-            print(Fore.RED + "\nKeyboard interrupt received. Exiting...")
+        text = input(Fore.CYAN + "Ask anything... ").strip()
+        if text.lower() == 'q':
+            print(Fore.GREEN + "Exiting chat mode...")
             break
-        except Exception as e:
-            print(Fore.RED + f"An error occurred: {e}")
+        print(Fore.BLUE + "Sending prompt...")
+        start_time = time.time()
+        response = llm.invoke([HumanMessage(content=text)])
+        elapsed = time.time() - start_time
+        print(Fore.MAGENTA + f"\nResponse received in {elapsed:.2f} seconds:\n")
+        print(Fore.WHITE + getattr(response, "content", str(response)))
+
+def ask_about_files(llm):
+    print(Fore.YELLOW + "\n[File Q&A Mode] You can upload multiple files (plain text).")
+    collection = create_inmemory_collection()
+    file_counter = 0
+    while True:
+        file_path = input(Fore.CYAN + "Enter file path to upload (or 'done' to finish): ").strip()
+        if file_path.lower() == 'done':
+            break
+        if add_file_to_collection(collection, file_path, f"user_file_{file_counter}"):
+            file_counter += 1
+    if file_counter == 0:
+        print(Fore.RED + "No files uploaded. Returning to main menu.")
+        return
+    print(Fore.GREEN + f"{file_counter} file(s) uploaded. You can now ask questions about them.")
+    while True:
+        query = input(Fore.CYAN + "Ask a question about your files (or 'q' to quit): ").strip()
+        if query.lower() == 'q':
+            print(Fore.GREEN + "Exiting file Q&A mode...")
+            break
+        context = query_collection(collection, query, n_results=3)
+        if not context:
+            print(Fore.RED + "No relevant content found in uploaded files.")
+            continue
+        prompt = (
+            "You are a helpful, detailed assistant. "
+            "Given the following context from uploaded files, answer the user's question in a detailed, conversational way. "
+            "If possible, explain your reasoning and provide relevant background from the files.\n\n"
+            f"Context:\n{context}\n\n"
+            f"Question: {query}\n\n"
+            "Detailed Answer:"
+        )   
+
+        print(Fore.BLUE + "Sending prompt to LLM...")
+        start_time = time.time()
+        response = llm.invoke([HumanMessage(content=prompt)])
+        elapsed = time.time() - start_time
+        print(Fore.MAGENTA + f"\nResponse received in {elapsed:.2f} seconds:\n")
+        print(Fore.WHITE + getattr(response, "content", str(response)))
 
 def main():
-    print(Fore.GREEN + "Initializing LangGraph ReAct Agent...")
+    print(Fore.GREEN + "Welcome to the Multi-LLM Assistant with File Q&A!")
     model_name = select_model()
-    agent = create_agent(model_name)
+    llm = get_llm(model_name)
     print(Fore.GREEN + f"Agent initialized with model: {model_name}")
-    if model_name == "ollama":
-        agent()  # Start Ollama's simple chat loop
-    else:
-        asyncio.run(run_prompt_loop(agent, model_name=f"ReAct Agent ({model_name})"))
+    while True:
+        choice = main_menu()
+        if choice == "1":
+            ask_anything(llm)
+        elif choice == "2":
+            ask_about_files(llm)
+        elif choice == "q":
+            print(Fore.GREEN + "Goodbye!")
+            break
+        else:
+            print(Fore.RED + "Invalid choice. Please try again.")
 
 if __name__ == "__main__":
     main()
