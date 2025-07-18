@@ -7,26 +7,30 @@ import os
 from dotenv import load_dotenv
 from typing import Dict, Any, List
 
+# Disable ChromaDB telemetry before importing
+os.environ["CHROMA_TELEMETRY_ENABLED"] = "False"
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+
 load_dotenv()
 memory = MemorySaver()
 graph = builder.compile(checkpointer=memory)
 
 from langchain_community.tools.tavily_search import TavilySearchResults
 
-# Restore deep_research_tool and research logic
 LLM_PROVIDERS = {
     "openai": {
-        "planner_model": "gpt-4.1",
-        "writer_model": "gpt-4.1"
+        "planner_model": "gpt-4o",
+        "writer_model": "gpt-4o"
     },
-    "deepseek": {
-        "planner_model": "deepseek-r1",
-        "writer_model": "deepseek-r1"
-    },
+    # Uncomment if you have valid keys and access
     "anthropic": {
         "planner_model": "claude-3-sonnet-20240229",
         "writer_model": "claude-3-sonnet-20240229"
-    }
+    },
+    # "deepseek": {
+    #     "planner_model": "deepseek-r1",
+    #     "writer_model": "deepseek-r1"
+    # }
 }
 
 def should_use_deep_research(query: str) -> bool:
@@ -36,6 +40,16 @@ def should_use_deep_research(query: str) -> bool:
         "impact", "future", "comprehensive", "detailed", "deep research"
     ]
     return (any(kw in query.lower() for kw in deep_keywords) or len(query.split()) >= 3)
+
+def user_friendly_error(e: Exception) -> str:
+    msg = str(e)
+    if "credit balance is too low" in msg or "insufficient_quota" in msg:
+        return "❌ Your credit balance is too low to access the API. Please check your billing or API credits."
+    if "rate_limit_exceeded" in msg or "429" in msg:
+        return "❌ The AI provider hit its rate or token limit. Please try again later or use a shorter/simpler query."
+    if "Request too large" in msg:
+        return "❌ Your request is too large for the current model/token limit. Please try a shorter or simpler query."
+    return f"❌ An error occurred: {msg}"
 
 async def run_research_workflow(topic: str, llm_provider: str) -> dict:
     config = LLM_PROVIDERS[llm_provider]
@@ -62,8 +76,17 @@ async def run_research_workflow(topic: str, llm_provider: str) -> dict:
     }
     final_state = None
     instructions = "Provide a detailed, multi-section report with at least 5 sources. Include a summary and a timeline if relevant."
-    async for event in graph.astream({"topic": topic, "instruction": instructions}, thread, stream_mode="values"):
-        final_state = event
+    try:
+        async for event in graph.astream({"topic": topic, "instruction": instructions}, thread, stream_mode="values"):
+            final_state = event
+    except Exception as e:
+        # Optionally log the full traceback for debugging:
+        # import traceback; print(traceback.format_exc())
+        return {
+            "provider": llm_provider,
+            "state": None,
+            "report": user_friendly_error(e)
+        }
     return {
         "provider": llm_provider,
         "state": final_state,
@@ -99,7 +122,6 @@ def extract_final_report(state: dict) -> str:
     return last_msg
 
 def summarize_tavily_results(result):
-    """Summarize Tavily search results into a readable, agent-style timeline if possible."""
     import json
     import re
     if isinstance(result, str):
@@ -109,19 +131,16 @@ def summarize_tavily_results(result):
             return result
     if not isinstance(result, list):
         return str(result)
-    # Try to extract timeline or chronological events if present
     timeline = []
     for i, item in enumerate(result, 1):
         title = item.get('title', '')
         url = item.get('url', '')
         content = item.get('content', '')
-        # Try to extract year/event pairs
         events = re.findall(r'(\b(19|20)\d{2}\b[^\n\r\-:]*[\-:–—][^\n\r]+)', content)
         if events:
             for event in events:
                 timeline.append(f"{event[0].strip()}")
         else:
-            # Fallback: use first 2-3 sentences
             sentences = re.split(r'(?<=[.!?]) +', content.strip())
             short_content = ' '.join(sentences[:3])
             timeline.append(f"{title}: {short_content}\nSource: {url}")
@@ -147,7 +166,7 @@ async def generate_research_report(topic: str, provider: str = "openai") -> str:
             summary = summarize_tavily_results(result)
             return f"{warning}\n\nQuery is simple. Here is a summary of search results:\n\n{summary}"
         except Exception as e:
-            return f"{warning}\n\nQuery doesn't require deep research and quick search failed: {e}"
+            return f"{warning}\n\nQuery doesn't require deep research and quick search failed: {user_friendly_error(e)}"
     try:
         tasks = [run_research_workflow(topic, provider) for provider in LLM_PROVIDERS.keys()]
         results = await asyncio.gather(*tasks)
@@ -159,59 +178,16 @@ async def generate_research_report(topic: str, provider: str = "openai") -> str:
                 summary = summarize_tavily_results(result)
                 return f"{warning}\n\nDeep research failed. Here is a summary of search results:\n\n{summary}"
             except Exception as e:
-                return f"{warning}\n\nDeep research failed and quick search failed: {e}"
+                return f"{warning}\n\nDeep research failed and quick search failed: {user_friendly_error(e)}"
         return f"{warning}\n\n### Deep Research Report (via {best_result['provider']})\n\n{best_result['report']}"
     except Exception as e:
-        err_str = str(e)
-        if "rate_limit_exceeded" in err_str or "429" in err_str or "Request too large" in err_str:
-            msg = f"\n[ERROR] Model token/rate limit exceeded.\nRaw error: {e}"
-            if "gpt-4.1" in err_str or "openai" in provider.lower():
-                msg += "\nOpenAI GPT-4.1 has a 30,000 tokens/minute limit. Retrying with reduced depth and queries."
-            else:
-                msg += f"\nModel '{provider}' may have hit its token or rate limit. Retrying with reduced depth and queries."
-            config = LLM_PROVIDERS[provider]
-            thread = {
-                "configurable": {
-                    "thread_id": str(uuid.uuid4()),
-                    "search_api": "tavily",
-                    "planner_provider": provider,
-                    "planner_model": config["planner_model"],
-                    "writer_provider": provider,
-                    "writer_model": config["writer_model"],
-                    "max_search_depth": 1,
-                    "number_of_queries": 1,
-                    "report_structure": [
-                        "Executive Summary",
-                        "Key Developments",
-                        "Conclusion"
-                    ]
-                }
-            }
-            final_state = None
-            instructions = "Provide a concise summary report with at least 2 sources."
-            async for event in graph.astream({"topic": topic, "instruction": instructions}, thread, stream_mode="values"):
-                final_state = event
-            best_result = {
-                "provider": provider,
-                "report": extract_final_report(final_state)
-            }
-            if not best_result["report"] or "No research results found" in best_result["report"]:
-                tavily = TavilySearchResults(max_results=3)
-                try:
-                    result = await tavily.ainvoke(topic)
-                    summary = summarize_tavily_results(result)
-                    return f"{warning}\n\n{msg}\n\nDeep research failed. Here is a summary of search results:\n\n{summary}"
-                except Exception as e:
-                    return f"{warning}\n\n{msg}\n\nDeep research failed and quick search failed: {e}"
-            return f"{warning}\n\n{msg}\n\n### Deep Research Report (via {best_result['provider']})\n\n{best_result['report']}"
-        else:
-            tavily = TavilySearchResults(max_results=3)
-            try:
-                result = await tavily.ainvoke(topic)
-                summary = summarize_tavily_results(result)
-                return f"{warning}\n\nDeep research failed. Here is a summary of search results:\n\n{summary}"
-            except Exception as e2:
-                return f"{warning}\n\nAn error occurred during research: {e}\nQuick search also failed: {e2}"
+        tavily = TavilySearchResults(max_results=3)
+        try:
+            result = await tavily.ainvoke(topic)
+            summary = summarize_tavily_results(result)
+            return f"{warning}\n\nDeep research failed. Here is a summary of search results:\n\n{summary}"
+        except Exception as e2:
+            return f"{warning}\n\nSorry, all research tools failed. Please try again later or use a simpler query.\n\nDetails: {user_friendly_error(e)}\nQuick search also failed: {user_friendly_error(e2)}"
 
 @tool("deep_research")
 async def deep_research_tool(query: str) -> str:
@@ -219,6 +195,7 @@ async def deep_research_tool(query: str) -> str:
     Generates a comprehensive research report with sources using multiple LLMs.
     """
     return await generate_research_report(query)
+
 
 tools = [
     deep_research_tool,
