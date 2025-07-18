@@ -25,17 +25,9 @@ Edit
 ```
 main/
 ├── Alfred/
-├── open_deep_research/
+
 
 ```
-Command to clone it:
-
-bash
-Copy
-Edit
-git clone https://github.com/langchain-ai/open_deep_research.git
-⚠️ Ensure both Alfred and open_deep_research are in the same parent directory, so the internal imports and relative paths work properly.
-
 ## 🛠️ Getting Started
 
 ### 1. Clone the Repository
@@ -68,6 +60,7 @@ touch .env
 ```env
 OPENAI_API_KEY=your_openai_api_key
 ANTHROPIC_API_KEY=your_anthropic_api_key
+GEMINI_API_KEY = your_gemini_api_key
 ```
 
 > ✅ `.env` is excluded from version control via `.gitignore`.
